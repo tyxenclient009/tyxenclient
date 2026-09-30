@@ -1,0 +1,277 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Theme channels (rgb triplets so Tailwind opacity modifiers work) ───────
+   Dark = soft charcoal green-tinted with richer elevation steps; Light = warm paper. */
+:root {
+  --surface-50: 244 245 243;
+  --surface-100: 255 255 255;
+  --surface-200: 238 241 238;
+  --surface-300: 226 231 227;
+  --surface-400: 211 219 212;
+  --ink: 18 24 20;
+  --ink-muted: 74 88 79;
+  --ink-faint: 139 151 143;
+  --line: 226 231 227;
+  --panel-bg: 255 255 255;
+  --panel-tint: 255 255 255;
+  --accent-300: 23 138 87;
+  --accent-400: 22 132 80;
+  --accent-500: 30 168 106;
+  color-scheme: light;
+}
+
+.dark {
+  --surface-50: 12 16 14;
+  --surface-100: 18 24 20;
+  --surface-200: 23 30 25;
+  --surface-300: 30 38 32;
+  --surface-400: 38 48 43;
+  --ink: 232 238 234;
+  --ink-muted: 168 183 174;
+  --ink-faint: 110 125 116;
+  --line: 38 48 43;
+  --panel-bg: 18 23 20;
+  --panel-tint: 255 255 255;
+  --accent-300: 126 226 168;
+  --accent-400: 79 214 138;
+  --accent-500: 30 168 106;
+  color-scheme: dark;
+}
+
+@layer base {
+  * {
+    @apply border-line;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  /* Opaque theme page: the pixels outside our rounded glass (window
+     corners) must match the theme — on Win10 the WebView paints those
+     pixels white, which glows around the launcher. */
+  html,
+  body {
+    background: #0e1210;
+    overflow: hidden;
+    font-feature-settings: "cv11", "ss01", "liga";
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  /* Light mode corners match the paper theme instead. */
+  html:not(.dark),
+  html:not(.dark) body {
+    background: #f4f5f3;
+  }
+  body {
+    @apply text-ink font-medium antialiased;
+    transition: background 0.3s ease;
+  }
+  /* Consistent keyboard focus — every interactive element glows accent. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--accent-400) / 0.65);
+    outline-offset: 2px;
+    border-radius: 6px;
+  }
+  ::selection {
+    background: rgb(139 214 139 / 0.4);
+    color: white;
+  }
+  /* Keep scrolling discoverable without letting the scrollbar dominate the
+     glass UI. Nested lists and the main content now share the same subtle
+     themed thumb, which is especially helpful in Browse and long dialogs. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--surface-400) / 0.8) transparent;
+    -ms-overflow-style: auto;
+  }
+  *::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  *::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: padding-box;
+    background-color: rgb(var(--surface-400) / 0.8);
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: rgb(var(--accent-500) / 0.75);
+  }
+  *::-webkit-scrollbar-track,
+  *::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+  main.panel {
+    scrollbar-gutter: auto;
+  }
+  /* Smooth scroll behavior */
+  html {
+    scroll-behavior: smooth;
+  }
+}
+
+/* ── GPU-accelerated page transition backdrop ────────────────────────────── */
+#__app_fade {
+  @apply transition-opacity duration-500;
+}
+
+@layer components {
+  /* ── Glassmorphic core (brief §Core look) ──────────────────────────────
+     Frosted panels: bg-surface/50 + 1px white/10% border + soft inner
+     shadow + backdrop-blur-xl + saturate boost. */
+  .panel {
+    @apply rounded-xl border border-white/10 bg-surface-100/50 shadow-1 backdrop-blur-xl backdrop-saturate-150;
+    background-image:
+      radial-gradient(ellipse at 50% 0%, rgb(79 214 138 / 0.05) 0%, transparent 65%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, transparent 100%);
+  }
+  .panel-raised {
+    @apply rounded-xl border border-white/10 bg-surface-200/50 shadow-2 backdrop-blur-xl backdrop-saturate-150;
+    background-image:
+      radial-gradient(ellipse at 50% 0%, rgb(79 214 138 / 0.06) 0%, transparent 65%),
+      linear-gradient(180deg, rgb(255 255 255 / 0.07) 0%, transparent 100%);
+  }
+  .input {
+    @apply h-10 w-full rounded-md border bg-surface-50 px-3 text-sm text-ink outline-none transition placeholder:text-ink-faint focus:border-accent-500 focus:ring-2 focus:ring-accent-500/25;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-semibold uppercase tracking-wider text-ink-muted;
+  }
+  .card {
+    @apply rounded-lg border border-white/10 bg-surface-100/50 p-4 shadow-1 backdrop-blur-xl backdrop-saturate-150;
+  }
+  .nav-active {
+    @apply bg-surface-200/80 text-ink shadow-1;
+  }
+  /* Sticky Modrinth-style facet bar: frosted, stays under content. */
+  .facet-sticky {
+    @apply sticky top-0 z-20 -mx-1 border-b border-white/5 bg-surface-50/80 px-1 py-2 backdrop-blur-xl;
+  }
+  /* Masonry grid for Browse (brief §3): columns + break-inside. */
+  .masonry {
+    @apply columns-1 gap-4 sm:columns-2 xl:columns-3;
+  }
+  .masonry > * {
+    @apply mb-4 break-inside-avoid;
+  }
+  /* Animated gradient hero bar (brief §Browse). */
+  .hero-gradient-bar {
+    background: linear-gradient(90deg, #1ea86a, #4fd68a, #22d3ee, #1ea86a);
+    background-size: 300% 100%;
+    @apply animate-gradient-x;
+  }
+  /* Heart burst + install success pulse (brief §Micro-interactions). */
+  .heart-burst {
+    @apply animate-heart-burst;
+  }
+  .install-success {
+    @apply relative;
+  }
+  .install-success::after {
+    content: "";
+    @apply absolute inset-0 animate-success-ping rounded-md border border-accent-400;
+  }
+
+  /* White glass borders are intentionally tuned for dark mode. In the light
+     theme they would disappear against white cards, so map them back to the
+     semantic line token without having to duplicate every component class. */
+  :root:not(.dark) [class*="border-white/5"],
+  :root:not(.dark) [class*="border-white/10"],
+  :root:not(.dark) [class*="border-white/15"],
+  :root:not(.dark) [class*="border-white/20"],
+  :root:not(.dark) [class*="border-white/25"] {
+    border-color: rgb(var(--line) / 0.9);
+  }
+}
+
+@media (max-width: 720px) {
+  /* The Tauri window stays desktop-sized, but browser preview and narrow
+     windows remain usable: keep the rail compact and give content the room. */
+  [data-collapsed="false"] {
+    width: 52px !important;
+    padding: 8px !important;
+  }
+  [data-collapsed="false"] > div:first-child {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  [data-collapsed="false"] > div:first-child > div:first-child > span,
+  [data-collapsed="false"] nav span:not(.size-1\.5),
+  [data-collapsed="false"] button[title="Quick switch (Ctrl K)"] > span,
+  [data-collapsed="false"] button[title="Quick switch (Ctrl K)"] kbd {
+    display: none;
+  }
+  [data-collapsed="false"] nav button,
+  [data-collapsed="false"] button[title="Quick switch (Ctrl K)"] {
+    justify-content: center;
+    padding-inline: 0;
+  }
+  main.panel {
+    padding: 16px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Maximized/fullscreen: every panel goes square + flush so no OS frame
+   (accent/white line) can peek through corner gaps. Driven by
+   AppShell's data-maximized attribute. */
+[data-maximized="true"] aside,
+[data-maximized="true"] main.panel {
+  border-radius: 0 !important;
+}
+/* Maximized: panels sit flush against the screen edges, so their pale
+   outer borders would read as white edge lines — drop them, keeping a
+   single faint divider between sidebar and content. */
+[data-maximized="true"] aside {
+  border-color: transparent !important;
+}
+[data-maximized="true"] main.panel {
+  border-color: transparent !important;
+  border-left-color: rgb(255 255 255 / 0.07) !important;
+}
+/* Maximized: the floating drawer docks flush (no desktop bleed in gaps). */
+[data-maximized="true"] .drawer-float {
+  top: 44px !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  border-right: 0 !important;
+}
+
+/* Shimmer sweep for skeleton loaders */
+.skeleton-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+.skeleton-shimmer::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
+  animation: shimmer 1.6s infinite;
+}
+
+/* Overlay scroll lock (see lib/scroll-lock.ts): while any modal, drawer
+   or palette is open, the AppShell <main> scroller (and body, for the
+   browser preview) must not move behind it. */
+.tyx-modal-open,
+.tyx-modal-open body {
+  overflow: hidden !important;
+}
+.tyx-modal-open main {
+  overflow: hidden !important;
+}

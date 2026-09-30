@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "tyxclient",
+  "version": "${version}",
+  "name": "Tyx Client",
+  "description": "Lunar-style in-game companion: Right Shift mod menu, nametag badge, HUD modules.",
+  "authors": ["Tyxen"],
+  "license": "ARR",
+  "icon": "assets/tyxclient/icon.png",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["gg.tyx.client.TyxClient"]
+  },
+  "mixins": ["tyxclient.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "fabric-api": "*",
+    "minecraft": "~${mc}",
+    "java": ">=21"
+  }
+}

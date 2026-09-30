@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "items": [
+    {
+      "title": "Inspect the Tauri packaging and Windows build setup",
+      "status": "in-progress"
+    },
+    {
+      "title": "Improve launcher presentation and release configuration where needed",
+      "status": "pending"
+    },
+    {
+      "title": "Build and verify the Windows executable/package",
+      "status": "pending"
+    }
+  ],
+  "updated_at": "2026-09-30T16:19:41.253Z",
+  "session_id": "01a0f2e8-5473-7628-9674-5c04f9ca0545"
+}

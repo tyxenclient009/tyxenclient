@@ -1,0 +1,158 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.fabricmc.api.EnvType
+ *  net.fabricmc.api.Environment
+ *  net.minecraft.class_11909
+ *  net.minecraft.class_310
+ *  net.minecraft.class_332
+ */
+package net.tyxen.hud.gui.components;
+
+import java.util.function.Consumer;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.tyxen.hud.gui.TyxenUI;
+import net.tyxen.hud.gui.components.UIComponent;
+import net.tyxen.hud.render.AnimationUtils;
+import net.tyxen.hud.render.Theme;
+import net.minecraft.class_11909;
+import net.minecraft.class_310;
+import net.minecraft.class_332;
+
+@Environment(value=EnvType.CLIENT)
+public class Dropdown
+extends UIComponent {
+    private final String label;
+    private final String[] options;
+    private int selectedIndex;
+    private final Consumer<String> onChange;
+    private boolean expanded = false;
+    private float hoverProgress;
+    private float expandProgress;
+    private int hoveredOption = -1;
+    private long lastUpdate = System.currentTimeMillis();
+
+    public Dropdown(int x, int y, int width, int height, String label, String[] options, String selected, Consumer<String> onChange) {
+        super(x, y, width, height);
+        this.label = label;
+        this.options = options;
+        this.onChange = onChange;
+        for (int i = 0; i < options.length; ++i) {
+            if (!options[i].equals(selected)) continue;
+            this.selectedIndex = i;
+            break;
+        }
+    }
+
+    @Override
+    public void render(class_332 graphics, int mouseX, int mouseY, float delta) {
+        this.hovered = this.isHovered(mouseX, mouseY);
+        long now = System.currentTimeMillis();
+        float dt = (float)(now - this.lastUpdate) / 1000.0f;
+        this.lastUpdate = now;
+        this.hoverProgress = AnimationUtils.smoothDelta(this.hoverProgress, this.hovered ? 1.0f : 0.0f, 0.4f, dt * 60.0f);
+        this.expandProgress = AnimationUtils.smoothDelta(this.expandProgress, this.expanded ? 1.0f : 0.0f, 0.35f, dt * 60.0f);
+        class_310 mc = class_310.method_1551();
+        if (this.hoverProgress > 0.01f && !this.expanded) {
+            int bgAlpha = (int)(15.0f * this.hoverProgress);
+            TyxenUI.roundedRect(graphics, this.x, this.y, this.width, this.height, 4, TyxenUI.withAlpha(-266722777, bgAlpha));
+        }
+        String displayLabel = Theme.formatSettingName(this.label);
+        int labelColor = TyxenUI.blend(-7303024, -723724, this.hoverProgress);
+        this.drawUiText(graphics, mc, displayLabel, this.x + 12, this.centeredTextY(mc, this.y, this.height), labelColor);
+        int dropWidth = 100;
+        int dropX = this.x + this.width - dropWidth - 12;
+        int dropY = this.y + 2;
+        int dropHeight = this.height - 4;
+        int btnColor = this.expanded ? -14498466 : (this.hovered ? -266722777 : -435153640);
+        TyxenUI.roundedRect(graphics, dropX, dropY, dropWidth, dropHeight, 4, btnColor);
+        int borderColor = this.expanded ? -11870592 : 1143616571;
+        TyxenUI.outline(graphics, dropX, dropY, dropWidth, dropHeight, borderColor);
+        String selectedText = this.options[this.selectedIndex];
+        int textX = dropX + (dropWidth - this.uiTextWidth(mc, selectedText)) / 2 - 6;
+        this.drawUiText(graphics, mc, selectedText, textX, this.centeredTextY(mc, dropY, dropHeight), -723724);
+        String arrow = this.expanded ? "\u25b2" : "\u25bc";
+        this.drawUiText(graphics, mc, arrow, dropX + dropWidth - 14, this.centeredTextY(mc, dropY, dropHeight), -7303024);
+        if (this.expandProgress > 0.01f) {
+            int optY;
+            int i;
+            int optionHeight = this.height;
+            int totalOptionsHeight = (int)((float)(this.options.length * optionHeight) * this.expandProgress);
+            int optionsY = this.y + this.height + 2;
+            TyxenUI.roundedRect(graphics, dropX, optionsY, dropWidth, totalOptionsHeight, 4, -435219433);
+            TyxenUI.outline(graphics, dropX, optionsY, dropWidth, totalOptionsHeight, 1143616571);
+            this.hoveredOption = -1;
+            if (this.expandProgress > 0.9f) {
+                for (i = 0; i < this.options.length; ++i) {
+                    optY = optionsY + i * optionHeight;
+                    if (mouseX < dropX || mouseX > dropX + dropWidth || mouseY < optY || mouseY >= optY + optionHeight) continue;
+                    this.hoveredOption = i;
+                    break;
+                }
+            }
+            for (i = 0; i < this.options.length; ++i) {
+                optY = optionsY + i * optionHeight;
+                if (optY + optionHeight <= optionsY || optY >= optionsY + totalOptionsHeight) continue;
+                int optBgColor = i == this.selectedIndex ? TyxenUI.withAlpha(-14498466, 60) : (i == this.hoveredOption ? -266722777 : -435153640);
+                graphics.method_25294(dropX + 1, optY, dropX + dropWidth - 1, optY + optionHeight, optBgColor);
+                if (i == this.selectedIndex) {
+                    this.drawUiText(graphics, mc, "\u2713", dropX + 6, this.centeredTextY(mc, optY, optionHeight), -14498466);
+                }
+                int optTextX = dropX + (i == this.selectedIndex ? 18 : 8);
+                int optTextColor = i == this.selectedIndex ? -14498466 : -723724;
+                this.drawUiText(graphics, mc, this.options[i], optTextX, this.centeredTextY(mc, optY, optionHeight), optTextColor);
+            }
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(class_11909 event, boolean bl) {
+        if (event.method_74245() != 0) {
+            return false;
+        }
+        double mouseX = event.comp_4798();
+        double mouseY = event.comp_4799();
+        int dropWidth = 100;
+        int dropX = this.x + this.width - dropWidth - 12;
+        if (this.expanded && this.expandProgress > 0.9f) {
+            int optionHeight = this.height;
+            int optionsY = this.y + this.height + 2;
+            for (int i = 0; i < this.options.length; ++i) {
+                int optY = optionsY + i * optionHeight;
+                if (!(mouseX >= (double)dropX) || !(mouseX <= (double)(dropX + dropWidth)) || !(mouseY >= (double)optY) || !(mouseY < (double)(optY + optionHeight))) continue;
+                this.selectedIndex = i;
+                if (this.onChange != null) {
+                    this.onChange.accept(this.options[this.selectedIndex]);
+                }
+                this.expanded = false;
+                return true;
+            }
+            this.expanded = false;
+            return true;
+        }
+        if (mouseX >= (double)dropX && mouseX <= (double)(dropX + dropWidth) && mouseY >= (double)this.y && mouseY <= (double)(this.y + this.height)) {
+            this.expanded = !this.expanded;
+            return true;
+        }
+        return false;
+    }
+
+    public String getSelected() {
+        return this.options[this.selectedIndex];
+    }
+
+    public boolean isExpanded() {
+        return this.expanded;
+    }
+
+    @Override
+    public int getHeight() {
+        if (this.expanded && this.expandProgress > 0.5f) {
+            return this.height + this.options.length * this.height + 4;
+        }
+        return this.height;
+    }
+}
+

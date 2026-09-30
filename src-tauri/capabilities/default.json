@@ -1,0 +1,42 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Default capabilities for Tyx Launcher",
+  "windows": ["main", "game-console"],
+  "permissions": [
+    "core:default",
+    "core:window:default",
+    "shell:default",
+    "shell:allow-open",
+    "fs:default",
+    "fs:allow-appdata-read",
+    "fs:allow-appdata-write",
+    "http:default",
+    "store:default",
+    "dialog:default",
+    "process:default",
+    "updater:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-start-resize-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-close",
+    "core:window:allow-create",
+    "core:webview:allow-create-webview-window",
+    {
+      "identifier": "http:allow-fetch",
+      "allow": [{ "url": "http://api.tyxen.space:11789/**" }, { "url": "https://api.tyxen.space/**" }, { "url": "https://cdn.modrinth.com/**" }, { "url": "https://edge.forgecdn.net/**" }, { "url": "https://api.modrinth.com/**" }, { "url": "https://piston-meta.mojang.com/**" }, { "url": "https://piston-data.mojang.com/**" }, { "url": "https://resources.download.minecraft.net/**" }, { "url": "https://meta.fabricmc.net/**" }, { "url": "https://meta.quiltmc.org/**" }, { "url": "https://api.adoptium.net/**" }, { "url": "https://sessionserver.mojang.com/**" }, { "url": "https://textures.minecraft.net/**" }, { "url": "http://textures.minecraft.net/**" }]
+    },
+    {
+      "identifier": "fs:allow-app-read-recursive",
+      "allow": [{ "path": "$APPDATA/tyx/**" }]
+    },
+    {
+      "identifier": "fs:allow-app-write-recursive",
+      "allow": [{ "path": "$APPDATA/tyx/**" }]
+    }
+  ]
+}

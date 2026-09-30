@@ -1,0 +1,84 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.fabricmc.api.EnvType
+ *  net.fabricmc.api.Environment
+ *  net.minecraft.class_1041
+ *  net.minecraft.class_3675
+ */
+package net.tyxen.hud.modules.impl.utility;
+
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.tyxen.hud.modules.Category;
+import net.tyxen.hud.modules.Module;
+import net.tyxen.hud.modules.settings.KeybindSetting;
+import net.tyxen.hud.modules.settings.TextSetting;
+import net.minecraft.class_1041;
+import net.minecraft.class_3675;
+
+@Environment(value=EnvType.CLIENT)
+public class AutoText
+extends Module {
+    private final TextSetting text1 = this.register(new TextSetting("message_1", "First quick message", "GG!"));
+    private final TextSetting text2 = this.register(new TextSetting("message_2", "Second quick message", "/home"));
+    private final TextSetting text3 = this.register(new TextSetting("message_3", "Third quick message", "Nice shot!"));
+    private final KeybindSetting key1 = this.register(new KeybindSetting("key_1", "Key for message 1", 321));
+    private final KeybindSetting key2 = this.register(new KeybindSetting("key_2", "Key for message 2", 322));
+    private final KeybindSetting key3 = this.register(new KeybindSetting("key_3", "Key for message 3", 323));
+    private boolean[] keyWasPressed = new boolean[3];
+
+    public AutoText() {
+        super("AutoText", "Send predefined messages quickly with keybinds (Numpad 1-3 by default)", Category.UTILITY);
+    }
+
+    @Override
+    protected void onEnable() {
+        this.keyWasPressed = new boolean[3];
+    }
+
+    @Override
+    public void onTick() {
+        boolean pressed;
+        if (!this.isInGame() || AutoText.mc.field_1755 != null) {
+            return;
+        }
+        class_1041 window = mc.method_22683();
+        if ((Integer)this.key1.getValue() != 0) {
+            pressed = class_3675.method_15987((class_1041)window, (int)((Integer)this.key1.getValue()));
+            if (pressed && !this.keyWasPressed[0]) {
+                this.sendText((String)this.text1.getValue());
+            }
+            this.keyWasPressed[0] = pressed;
+        }
+        if ((Integer)this.key2.getValue() != 0) {
+            pressed = class_3675.method_15987((class_1041)window, (int)((Integer)this.key2.getValue()));
+            if (pressed && !this.keyWasPressed[1]) {
+                this.sendText((String)this.text2.getValue());
+            }
+            this.keyWasPressed[1] = pressed;
+        }
+        if ((Integer)this.key3.getValue() != 0) {
+            pressed = class_3675.method_15987((class_1041)window, (int)((Integer)this.key3.getValue()));
+            if (pressed && !this.keyWasPressed[2]) {
+                this.sendText((String)this.text3.getValue());
+            }
+            this.keyWasPressed[2] = pressed;
+        }
+    }
+
+    private void sendText(String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        if (mc.method_1562() != null) {
+            if (text.startsWith("/")) {
+                mc.method_1562().method_45730(text.substring(1));
+            } else {
+                mc.method_1562().method_45729(text);
+            }
+        }
+    }
+}
+

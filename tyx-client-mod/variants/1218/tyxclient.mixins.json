@@ -1,0 +1,17 @@
+{
+  "required": true,
+  "package": "gg.tyx.client.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "client": [
+    "NametagBadgeMixin",
+    "SelfNametagMixin",
+    "SelfNametagBase",
+    "SelfPrefixMixin",
+    "TitleScreenMixin",
+    "ScreenThemeMixin",
+    "GameMenuScreenMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

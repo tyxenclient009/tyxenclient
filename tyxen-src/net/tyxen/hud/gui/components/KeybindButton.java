@@ -1,0 +1,188 @@
+/*
+ * Decompiled with CFR 0.152.
+ * 
+ * Could not load the following classes:
+ *  net.fabricmc.api.EnvType
+ *  net.fabricmc.api.Environment
+ *  net.minecraft.class_11908
+ *  net.minecraft.class_11909
+ *  net.minecraft.class_310
+ *  net.minecraft.class_332
+ *  net.minecraft.class_3675$class_307
+ */
+package net.tyxen.hud.gui.components;
+
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
+import net.fabricmc.api.EnvType;
+import net.fabricmc.api.Environment;
+import net.tyxen.hud.gui.TyxenUI;
+import net.tyxen.hud.gui.components.UIComponent;
+import net.tyxen.hud.render.AnimationUtils;
+import net.tyxen.hud.render.Theme;
+import net.minecraft.class_11908;
+import net.minecraft.class_11909;
+import net.minecraft.class_310;
+import net.minecraft.class_332;
+import net.minecraft.class_3675;
+
+@Environment(value=EnvType.CLIENT)
+public class KeybindButton
+extends UIComponent {
+    private final String label;
+    private int keyCode;
+    private int modifiers;
+    private final BiConsumer<Integer, Integer> onChangeWithMods;
+    private boolean listening = false;
+    private float hoverProgress;
+    private float pulseProgress;
+    private long lastUpdate = System.currentTimeMillis();
+
+    public KeybindButton(int x, int y, int width, int height, String label, int keyCode, Consumer<Integer> onChange) {
+        this(x, y, width, height, label, keyCode, 0, (k, m) -> onChange.accept((Integer)k));
+    }
+
+    public KeybindButton(int x, int y, int width, int height, String label, int keyCode, int modifiers, BiConsumer<Integer, Integer> onChange) {
+        super(x, y, width, height);
+        this.label = label;
+        this.keyCode = keyCode;
+        this.modifiers = modifiers;
+        this.onChangeWithMods = onChange;
+    }
+
+    @Override
+    public void render(class_332 graphics, int mouseX, int mouseY, float delta) {
+        int textColor;
+        String keyText;
+        this.hovered = this.isHovered(mouseX, mouseY);
+        long now = System.currentTimeMillis();
+        float dt = (float)(now - this.lastUpdate) / 1000.0f;
+        this.lastUpdate = now;
+        this.hoverProgress = AnimationUtils.smoothDelta(this.hoverProgress, this.hovered ? 1.0f : 0.0f, 0.4f, dt * 60.0f);
+        this.pulseProgress = this.listening ? (float)(Math.sin((double)now / 200.0) * 0.5 + 0.5) : AnimationUtils.smoothDelta(this.pulseProgress, 0.0f, 0.5f, dt * 60.0f);
+        class_310 mc = class_310.method_1551();
+        if (this.hoverProgress > 0.01f && !this.listening) {
+            int bgAlpha = (int)(15.0f * this.hoverProgress);
+            TyxenUI.roundedRect(graphics, this.x, this.y, this.width, this.height, 4, TyxenUI.withAlpha(-266722777, bgAlpha));
+        }
+        String displayLabel = Theme.formatSettingName(this.label);
+        int labelColor = TyxenUI.blend(-7303024, -723724, this.hoverProgress);
+        this.drawUiText(graphics, mc, displayLabel, this.x + 12, this.centeredTextY(mc, this.y, this.height), labelColor);
+        int btnWidth = 100;
+        int btnX = this.x + this.width - btnWidth - 12;
+        int btnY = this.y + 2;
+        int btnHeight = this.height - 4;
+        int bgColor = this.listening ? TyxenUI.blend(-14498466, -11870592, this.pulseProgress) : (this.hovered ? -266722777 : -435153640);
+        TyxenUI.roundedRect(graphics, btnX, btnY, btnWidth, btnHeight, 4, bgColor);
+        int borderColor = this.listening ? -11870592 : TyxenUI.blend(1143616571, -14498466, this.hoverProgress * 0.5f);
+        TyxenUI.outline(graphics, btnX, btnY, btnWidth, btnHeight, borderColor);
+        if (this.listening) {
+            int glowAlpha = (int)(40.0f * this.pulseProgress);
+            graphics.method_25294(btnX - 2, btnY - 2, btnX + btnWidth + 2, btnY, TyxenUI.withAlpha(-14498466, glowAlpha));
+            graphics.method_25294(btnX - 2, btnY + btnHeight, btnX + btnWidth + 2, btnY + btnHeight + 2, TyxenUI.withAlpha(-14498466, glowAlpha));
+        }
+        if (this.listening) {
+            keyText = "Press Key...";
+            textColor = -723724;
+        } else if (this.keyCode == 0) {
+            keyText = "Not Set";
+            textColor = -9934744;
+        } else {
+            keyText = this.getKeyName();
+            textColor = -14498466;
+        }
+        int textX = btnX + (btnWidth - this.uiTextWidth(mc, keyText)) / 2;
+        this.drawUiText(graphics, mc, keyText, textX, this.centeredTextY(mc, btnY, btnHeight), textColor);
+        if (this.hovered && !this.listening && this.keyCode != 0) {
+            String hint = "Right-click to clear";
+            int hintX = btnX - this.uiTextWidth(mc, hint) - 8;
+            this.drawUiText(graphics, mc, hint, hintX, this.centeredTextY(mc, this.y, this.height), -9934744);
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(class_11909 event, boolean bl) {
+        if (super.mouseClicked(event, bl)) {
+            if (event.method_74245() == 0) {
+                this.listening = true;
+            } else if (event.method_74245() == 1) {
+                this.keyCode = 0;
+                this.modifiers = 0;
+                this.listening = false;
+                this.notifyChange();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    @Override
+    public boolean keyPressed(class_11908 event) {
+        if (this.listening) {
+            int keyCode = event.comp_4795();
+            int mods = event.comp_4797();
+            if (keyCode == 256) {
+                this.listening = false;
+            } else {
+                if (keyCode == 340 || keyCode == 344 || keyCode == 341 || keyCode == 345 || keyCode == 342 || keyCode == 346) {
+                    return true;
+                }
+                this.keyCode = keyCode;
+                this.modifiers = 0;
+                if ((mods & 1) != 0) {
+                    this.modifiers |= 1;
+                }
+                if ((mods & 2) != 0) {
+                    this.modifiers |= 2;
+                }
+                if ((mods & 4) != 0) {
+                    this.modifiers |= 4;
+                }
+                this.listening = false;
+                this.notifyChange();
+            }
+            return true;
+        }
+        return false;
+    }
+
+    private void notifyChange() {
+        if (this.onChangeWithMods != null) {
+            this.onChangeWithMods.accept(this.keyCode, this.modifiers);
+        }
+    }
+
+    private String getKeyName() {
+        if (this.keyCode == 0) {
+            return "None";
+        }
+        StringBuilder name = new StringBuilder();
+        if ((this.modifiers & 2) != 0) {
+            name.append("Ctrl+");
+        }
+        if ((this.modifiers & 4) != 0) {
+            name.append("Alt+");
+        }
+        if ((this.modifiers & 1) != 0) {
+            name.append("Shift+");
+        }
+        try {
+            Object keyName = class_3675.class_307.field_1668.method_1447(this.keyCode).method_27445().getString();
+            if (((String)keyName).length() > 6 && name.length() > 0) {
+                keyName = ((String)keyName).substring(0, 4) + "..";
+            } else if (((String)keyName).length() > 10) {
+                keyName = ((String)keyName).substring(0, 8) + "..";
+            }
+            name.append((String)keyName);
+        }
+        catch (Exception e) {
+            name.append("Key").append(this.keyCode);
+        }
+        return name.toString();
+    }
+
+    public boolean isListening() {
+        return this.listening;
+    }
+}
+

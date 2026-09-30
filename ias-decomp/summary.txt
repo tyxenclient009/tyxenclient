@@ -1,0 +1,2 @@
+Summary for C:\Users\Administrator\AppData\Roaming\com.tyx.launcher\tyx\instances\1-521716\mods\IAS-9.0.6+1.21.11-fabric.jar
+Decompiled with CFR 0.152

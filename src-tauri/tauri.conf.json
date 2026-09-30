@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Tyx Launcher",
+  "version": "0.1.0",
+  "identifier": "com.tyx.launcher",
+  "build": {
+    "devUrl": "http://localhost:1420",
+    "frontendDist": "../dist",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Tyx Launcher",
+        "width": 1240,
+        "height": 760,
+        "minWidth": 960,
+        "minHeight": 600,
+        "decorations": false,
+        "transparent": true,
+        "resizable": true,
+        "shadow": true,
+        "fullscreen": false,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self' ipc: http: https: data: blob:; img-src 'self' asset: https: data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; script-src 'self'; connect-src 'self' ipc: http: https: ws: wss: data: blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "publisher": "Satyam Gupta",
+    "icon": ["icons/icon.ico", "icons/icon.icns", "icons/icon.png"],
+    "category": "Game",
+    "resources": ["WebView2Loader.dll"],
+    "shortDescription": "Tyx Launcher — modded Minecraft, minus the bloat",
+    "longDescription": "Install, manage and launch modded Minecraft instances. Browse Modrinth, one-click installs, isolated profiles.",
+    "windows": {
+      "nsis": {
+        "installerIcon": "icons/icon.ico",
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "active": false,
+      "endpoints": ["https://releases.tyx.gg/launcher/latest.json"],
+      "dialog": true,
+      "pubkey": "REPLACE_WITH_UPDATER_PUBKEY_IN_PHASE_4"
+    }
+  }
+}

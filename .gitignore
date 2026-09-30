@@ -1,0 +1,27 @@
+# Deps / build
+node_modules/
+dist/
+src-tauri/target/
+**/target/
+
+# Tauri bundles (large, reproducible via `tauri build`)
+*.AppImage
+*.deb
+*.dmg
+*.msi
+*.nsis.zip
+*.exe
+
+# Vite / TS
+*.local
+vite.config.ts.timestamp-*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log
+.env
+.env.local
