@@ -46,7 +46,7 @@ button.ghost{background:rgba(255,255,255,.06)}
 <div id="dash">
 <div class="top"><div class="logo">T</div><h1>Tyxen Admin</h1></div>
 <div class="sub">Staff dashboard — updates, users, announcements.</div>
-<div class="card"><h3><span id="dot" class="dot bad"></span>Live status <span style="float:right"><button class="ghost" onclick="load()">Refresh</button> <button class="ghost" onclick="lock()">Lock</button></span></h3><div id="status">—</div><div id="msg"></div></div>
+<div class="card"><h3><span id="dot" class="dot bad"></span>Live status <span style="float:right"><button class="ghost" onclick="load()">Refresh</button> <button class="ghost" onclick="revokeAll()">Sign out everywhere</button> <button class="ghost" onclick="lock()">Lock</button></span></h3><div id="status">—</div><div id="msg"></div></div>
 <div class="card"><h3>Push update</h3>
 <div class="row"><input id="f" type="file" accept=".jar"></div>
 <div class="row"><input id="v" placeholder="version, e.g. 1.0.72"></div>
@@ -70,6 +70,12 @@ button.ghost{background:rgba(255,255,255,.06)}
 const $ = id => document.getElementById(id);
 const SRV = location.origin;
 function tok(){ return sessionStorage.getItem('txtok') || ''; }
+// The server reads the session from this header so it can authorise an upload
+// before it ever buffers the body.
+function hdr(k){ return { 'Content-Type': 'application/json', 'x-admin-token': k }; }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+let USERS = [], ANNS = [], IPS = [];
 function say(t, bad){ $('msg').textContent = t; $('msg').style.color = bad ? '#f87171' : '#37E393'; }
 async function unlock(){
   const u = $('user').value.trim();
@@ -100,19 +106,20 @@ async function load(){
   if (!k) { lock(); return; }
   try {
     const m = await (await fetch(SRV + '/api/tyxen/latest')).json();
-    const s = await (await fetch(SRV + '/admin/stats', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: k }) })).json();
+    const s = await (await fetch(SRV + '/admin/stats', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
     if (s.error) { lock(); return; }
     const u = s.users || [];
     const anns = s.announcements || [];
+    USERS = u; ANNS = anns;
     $('dot').className = 'dot ok';
     const on = s.online || { online: 0, total: 0 };
-    $('status').innerHTML = '<div class="stat">Version: <b>' + m.version + '</b> — ' + (m.changelog || '') + '</div>'
-      + '<div class="stat">Players: <b>' + on.online + ' online / ' + on.total + ' total</b></div>'
-      + '<div class="stat">Users: <b>' + u.length + '</b></div>';
-    $('users').innerHTML = u.map(n =>
-      '<div class="user"><span>' + n + '</span><button class="danger" onclick="delUser(\'' + n + '\')">Remove</button></div>').join('') || '—';
+    $('status').innerHTML = '<div class="stat">Version: <b>' + esc(m.version) + '</b> — ' + esc(m.changelog) + '</div>'
+      + '<div class="stat">Players: <b>' + esc(on.online) + ' online / ' + esc(on.total) + ' total</b></div>'
+      + '<div class="stat">Users: <b>' + esc(u.length) + '</b></div>';
+    $('users').innerHTML = u.map((n, i) =>
+      '<div class="user"><span>' + esc(n) + '</span><button class="danger" onclick="delUserAt(' + i + ')">Remove</button></div>').join('') || '—';
     $('anns').innerHTML = anns.map(a =>
-      '<div class="ann"><b>' + a.title + '</b><small>' + (a.body || '') + ' · ' + (a.date || '') + '</small><div><button class="danger" onclick="delAnn(' + a.id + ')">Delete</button></div></div>').join('') || '—';
+      '<div class="ann"><b>' + esc(a.title) + '</b><small>' + esc(a.body) + ' · ' + esc(a.date) + '</small><div><button class="danger" onclick="delAnn(' + Number(a.id) + ')">Delete</button></div></div>').join('') || '—';
     loadIpsFromStats();
     say('');
   } catch(e){ $('dot').className = 'dot bad'; say('Cannot reach server: ' + e, true); }
@@ -120,7 +127,7 @@ async function load(){
 async function loadIpsFromStats(){
   try {
     const k = tok();
-    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: k }) })).json();
+    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
     loadIps(s.ips || []);
   } catch(e){}
 }
@@ -135,8 +142,8 @@ async function push(){
     let bin = '';
     for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+8192));
     const res = await fetch(SRV + '/admin/upload', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ token: k, filename: file.name, version: $('v').value, changelog: $('c').value, data: btoa(bin) })
+      method: 'POST', headers: hdr(k),
+      body: JSON.stringify({ filename: file.name, version: $('v').value, changelog: $('c').value, data: btoa(bin) })
     });
     say(await res.text(), !res.ok);
     if (res.ok) load();
@@ -146,14 +153,14 @@ async function push(){
 async function postAnn(){
   const k = tok();
   if (!$('at').value) { say('Write a title!', true); return; }
-  const res = await fetch(SRV + '/admin/announce', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  const res = await fetch(SRV + '/admin/announce', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, title: $('at').value, body: $('ab').value }) });
   if (res.ok) { $('at').value = ''; $('ab').value = ''; load(); }
   else say(await res.text(), true);
 }
 async function delAnn(id){
   const k = tok();
-  await fetch(SRV + '/admin/announce/delete', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/announce/delete', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, id }) });
   load();
 }
@@ -161,22 +168,36 @@ async function addUser(){
   const k = tok();
   const n = $('u').value.trim();
   if (!n) return;
-  await fetch(SRV + '/admin/users/add', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/users/add', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, username: n }) });
   $('u').value = ''; load();
 }
 async function delUser(n){
   const k = tok();
   if (!confirm('Remove ' + n + '?')) return;
-  await fetch(SRV + '/admin/users/remove', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/users/remove', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, username: n }) });
   load();
 }
 if (tok()) { $('login').style.display = 'none'; $('dash').style.display = 'block'; load(); }
 
 async function loadIps(list){
-  $('ips').innerHTML = (list || []).map(n =>
-    '<div class="user"><span>' + n + '</span><button class="danger" onclick="delIp(\'' + n + '\')">Remove</button></div>').join('') || '<small>Empty = everyone can open /admin (login still required).</small>';
+  IPS = list || [];
+  $('ips').innerHTML = IPS.map((n, i) =>
+    '<div class="user"><span>' + esc(n) + '</span><button class="danger" onclick="delIpAt(' + i + ')">Remove</button></div>').join('') || '<small>Empty = everyone can open /admin (login still required).</small>';
+}
+// Rows are addressed by index: allowed-IP values are free text, so splicing one
+// into an onclick attribute would let an entry like x');alert(1);// run code.
+async function delIpAt(i){ await delIp(IPS[i]); }
+async function delUserAt(i){ await delUser(USERS[i]); }
+async function revokeAll(){
+  const k = tok();
+  if (!confirm('Sign out every admin session on this server?')) return;
+  try {
+    const r = await (await fetch(SRV + '/admin/revoke', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
+    sessionStorage.removeItem('txtok');
+    location.reload();
+  } catch(e){ say('Failed: ' + e, true); }
 }
 async function addIp(){
   const k = tok();
@@ -204,12 +225,12 @@ async function delIp(n){
 }
 async function curIps(k){
   try {
-    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: k }) })).json();
+    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
     return s.ips || [];
   } catch(e){ return []; }
 }
 async function saveIps(k, list){
-  await fetch(SRV + '/admin/ips/set', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/ips/set', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, ips: list }) });
 }
 

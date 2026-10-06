@@ -12,8 +12,36 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 
+// ---- minimal .env loader (stdlib only, no new dependency) ---------------
+// Reads KEY=VALUE from a .env sitting next to this file and does not overwrite
+// anything already set in the real environment, so a service manager still wins.
+function loadDotEnv() {
+  try {
+    const p = path.join(__dirname, '.env');
+    if (!fs.existsSync(p)) return;
+    for (const line of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
+      const t = line.trim();
+      if (!t || t.startsWith('#')) continue;
+      const eq = t.indexOf('=');
+      if (eq < 1) continue;
+      const k = t.slice(0, eq).trim();
+      let v = t.slice(eq + 1).trim();
+      if ((v.startsWith('"') && v.endsWith('"')) || (v.startsWith("'") && v.endsWith("'"))) v = v.slice(1, -1);
+      if (process.env[k] === undefined) process.env[k] = v;
+    }
+  } catch {}
+}
+loadDotEnv();
+
 const PORT = process.env.SERVER_PORT || process.env.PORT || 8787;
-const ADMIN_USER = 'SatyamSen';
+
+// ---- admin credential: never stored in this file ------------------------
+// Both values come from the environment (.env is git-ignored; see
+// .env.example). Generate the key without leaving the password in shell
+// history with:   ADMIN_NEW_PASSWORD='…' node server.cjs --make-key
+// If either value is missing, every admin login is refused (fail closed).
+const ADMIN_USER = process.env.ADMIN_USER || '';
+const ADMIN_KEY = process.env.ADMIN_KEY || '';
 // Embedded staff UI (tyxen-admin/admin-ui/index.html) - served at GET /admin.
 const ADMIN_HTML = `<!DOCTYPE html>
 <html>
@@ -63,7 +91,7 @@ button.ghost{background:rgba(255,255,255,.06)}
 <div id="dash">
 <div class="top"><div class="logo">T</div><h1>Tyxen Admin</h1></div>
 <div class="sub">Staff dashboard — updates, users, announcements.</div>
-<div class="card"><h3><span id="dot" class="dot bad"></span>Live status <span style="float:right"><button class="ghost" onclick="load()">Refresh</button> <button class="ghost" onclick="lock()">Lock</button></span></h3><div id="status">—</div><div id="msg"></div></div>
+<div class="card"><h3><span id="dot" class="dot bad"></span>Live status <span style="float:right"><button class="ghost" onclick="load()">Refresh</button> <button class="ghost" onclick="revokeAll()">Sign out everywhere</button> <button class="ghost" onclick="lock()">Lock</button></span></h3><div id="status">—</div><div id="msg"></div></div>
 <div class="card"><h3>Push update</h3>
 <div class="row"><input id="f" type="file" accept=".jar"></div>
 <div class="row"><input id="v" placeholder="version, e.g. 1.0.72"></div>
@@ -87,6 +115,12 @@ button.ghost{background:rgba(255,255,255,.06)}
 const $ = id => document.getElementById(id);
 const SRV = location.origin;
 function tok(){ return sessionStorage.getItem('txtok') || ''; }
+// The server reads the session from this header so it can authorise an upload
+// before it ever buffers the body.
+function hdr(k){ return { 'Content-Type': 'application/json', 'x-admin-token': k }; }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g,
+  c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+let USERS = [], ANNS = [], IPS = [];
 function say(t, bad){ $('msg').textContent = t; $('msg').style.color = bad ? '#f87171' : '#37E393'; }
 async function unlock(){
   const u = $('user').value.trim();
@@ -117,19 +151,20 @@ async function load(){
   if (!k) { lock(); return; }
   try {
     const m = await (await fetch(SRV + '/api/tyxen/latest')).json();
-    const s = await (await fetch(SRV + '/admin/stats', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: k }) })).json();
+    const s = await (await fetch(SRV + '/admin/stats', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
     if (s.error) { lock(); return; }
     const u = s.users || [];
     const anns = s.announcements || [];
+    USERS = u; ANNS = anns;
     $('dot').className = 'dot ok';
     const on = s.online || { online: 0, total: 0 };
-    $('status').innerHTML = '<div class="stat">Version: <b>' + m.version + '</b> — ' + (m.changelog || '') + '</div>'
-      + '<div class="stat">Players: <b>' + on.online + ' online / ' + on.total + ' total</b></div>'
-      + '<div class="stat">Users: <b>' + u.length + '</b></div>';
-    $('users').innerHTML = u.map(n =>
-      '<div class="user"><span>' + n + '</span><button class="danger" onclick="delUser(\\'' + n + '\\')">Remove</button></div>').join('') || '—';
+    $('status').innerHTML = '<div class="stat">Version: <b>' + esc(m.version) + '</b> — ' + esc(m.changelog) + '</div>'
+      + '<div class="stat">Players: <b>' + esc(on.online) + ' online / ' + esc(on.total) + ' total</b></div>'
+      + '<div class="stat">Users: <b>' + esc(u.length) + '</b></div>';
+    $('users').innerHTML = u.map((n, i) =>
+      '<div class="user"><span>' + esc(n) + '</span><button class="danger" onclick="delUserAt(' + i + ')">Remove</button></div>').join('') || '—';
     $('anns').innerHTML = anns.map(a =>
-      '<div class="ann"><b>' + a.title + '</b><small>' + (a.body || '') + ' · ' + (a.date || '') + '</small><div><button class="danger" onclick="delAnn(' + a.id + ')">Delete</button></div></div>').join('') || '—';
+      '<div class="ann"><b>' + esc(a.title) + '</b><small>' + esc(a.body) + ' · ' + esc(a.date) + '</small><div><button class="danger" onclick="delAnn(' + Number(a.id) + ')">Delete</button></div></div>').join('') || '—';
     loadIpsFromStats();
     say('');
   } catch(e){ $('dot').className = 'dot bad'; say('Cannot reach server: ' + e, true); }
@@ -137,7 +172,7 @@ async function load(){
 async function loadIpsFromStats(){
   try {
     const k = tok();
-    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: k }) })).json();
+    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
     loadIps(s.ips || []);
   } catch(e){}
 }
@@ -152,8 +187,8 @@ async function push(){
     let bin = '';
     for (let i = 0; i < bytes.length; i += 8192) bin += String.fromCharCode.apply(null, bytes.subarray(i, i+8192));
     const res = await fetch(SRV + '/admin/upload', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ token: k, filename: file.name, version: $('v').value, changelog: $('c').value, data: btoa(bin) })
+      method: 'POST', headers: hdr(k),
+      body: JSON.stringify({ filename: file.name, version: $('v').value, changelog: $('c').value, data: btoa(bin) })
     });
     say(await res.text(), !res.ok);
     if (res.ok) load();
@@ -163,14 +198,14 @@ async function push(){
 async function postAnn(){
   const k = tok();
   if (!$('at').value) { say('Write a title!', true); return; }
-  const res = await fetch(SRV + '/admin/announce', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  const res = await fetch(SRV + '/admin/announce', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, title: $('at').value, body: $('ab').value }) });
   if (res.ok) { $('at').value = ''; $('ab').value = ''; load(); }
   else say(await res.text(), true);
 }
 async function delAnn(id){
   const k = tok();
-  await fetch(SRV + '/admin/announce/delete', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/announce/delete', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, id }) });
   load();
 }
@@ -178,22 +213,36 @@ async function addUser(){
   const k = tok();
   const n = $('u').value.trim();
   if (!n) return;
-  await fetch(SRV + '/admin/users/add', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/users/add', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, username: n }) });
   $('u').value = ''; load();
 }
 async function delUser(n){
   const k = tok();
   if (!confirm('Remove ' + n + '?')) return;
-  await fetch(SRV + '/admin/users/remove', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/users/remove', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, username: n }) });
   load();
 }
 if (tok()) { $('login').style.display = 'none'; $('dash').style.display = 'block'; load(); }
 
 async function loadIps(list){
-  $('ips').innerHTML = (list || []).map(n =>
-    '<div class="user"><span>' + n + '</span><button class="danger" onclick="delIp(\\'' + n + '\\')">Remove</button></div>').join('') || '<small>Empty = everyone can open /admin (login still required).</small>';
+  IPS = list || [];
+  $('ips').innerHTML = IPS.map((n, i) =>
+    '<div class="user"><span>' + esc(n) + '</span><button class="danger" onclick="delIpAt(' + i + ')">Remove</button></div>').join('') || '<small>Empty = everyone can open /admin (login still required).</small>';
+}
+// Rows are addressed by index: allowed-IP values are free text, so splicing one
+// into an onclick attribute would let an entry like x\');alert(1);// run code.
+async function delIpAt(i){ await delIp(IPS[i]); }
+async function delUserAt(i){ await delUser(USERS[i]); }
+async function revokeAll(){
+  const k = tok();
+  if (!confirm('Sign out every admin session on this server?')) return;
+  try {
+    const r = await (await fetch(SRV + '/admin/revoke', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
+    sessionStorage.removeItem('txtok');
+    location.reload();
+  } catch(e){ say('Failed: ' + e, true); }
 }
 async function addIp(){
   const k = tok();
@@ -221,12 +270,12 @@ async function delIp(n){
 }
 async function curIps(k){
   try {
-    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ token: k }) })).json();
+    const s = await (await fetch(SRV + '/admin/ips', { method: 'POST', headers: hdr(k), body: JSON.stringify({ token: k }) })).json();
     return s.ips || [];
   } catch(e){ return []; }
 }
 async function saveIps(k, list){
-  await fetch(SRV + '/admin/ips/set', { method: 'POST', headers: {'Content-Type': 'application/json'},
+  await fetch(SRV + '/admin/ips/set', { method: 'POST', headers: hdr(k),
     body: JSON.stringify({ token: k, ips: list }) });
 }
 
@@ -235,39 +284,110 @@ async function saveIps(k, list){
 </html>
 `;
 // Embedded staff UI (tyxen-admin/admin-ui/index.html) - served at GET /admin.
-const ADMIN_SALT = '7895485c52d196a8d20a3c74ef596f22';
-const ADMIN_HASH = '1be680a443ae9849fbf8362490a592fb70177ccb956b8bcea0e2d898da5a7968';
-const SESSIONS = new Map();
-const SESSION_TTL = 12 * 3600 * 1000;
-function checkPassword(pw) {
+
+// ---- password hashing: scrypt, stdlib only, no secret in source ---------
+// The old check was a single SHA-256 round over a fixed salt that was itself
+// committed to a public repo, so it was offline-crackable from the source.
+// scrypt is memory-hard and the salt now travels inside the stored key.
+const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 32 };
+function makeAdminKey(password) {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.scryptSync(String(password), salt, SCRYPT.keylen, SCRYPT);
+  return `scrypt$${SCRYPT.N}$${SCRYPT.r}$${SCRYPT.p}$${salt.toString('base64')}$${hash.toString('base64')}`;
+}
+function checkAdminKey(key, password) {
+  const parts = String(key || '').split('$');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  const N = Number(parts[1]);
+  const r = Number(parts[2]);
+  const p = Number(parts[3]);
+  if (!Number.isInteger(N) || !Number.isInteger(r) || !Number.isInteger(p)) return false;
+  const salt = Buffer.from(parts[4], 'base64');
+  const want = Buffer.from(parts[5], 'base64');
+  if (!salt.length || !want.length) return false;
+  let got;
   try {
-    const h = crypto.createHash('sha256').update(ADMIN_SALT + String(pw || '')).digest();
-    const e = Buffer.from(ADMIN_HASH, 'hex');
-    return h.length === e.length && crypto.timingSafeEqual(h, e);
+    got = crypto.scryptSync(String(password == null ? '' : password), salt, want.length,
+      { N, r, p, maxmem: 256 * 1024 * 1024 });
   } catch {
     return false;
   }
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
 }
-function allowedIp(req) {
-  try {
-    const db = loadDb();
-    const list = db.allowedIps || [];
-    if (!list.length) return true;
-    return list.includes(clientIp(req));
-  } catch {
-    return true;
-  }
+function checkPassword(pw) {
+  if (!ADMIN_USER || !ADMIN_KEY) return false;
+  return checkAdminKey(ADMIN_KEY, pw);
+}
+
+// ---- caller identity ----------------------------------------------------
+// The old clientIp() took x-forwarded-for[0], which is text the caller writes
+// itself. That single header picked who passed the admin IP allowlist AND which
+// bucket the brute-force ban was counted against, so both were bypassable.
+// By default we use only the TCP peer address, which cannot be forged. Set
+// TRUST_PROXY_HOPS=1 behind one rewriting proxy (nginx/Caddy), 2 behind
+// CDN + proxy, etc.
+const TRUST_PROXY_HOPS = (() => {
+  const n = Number.parseInt(process.env.TRUST_PROXY_HOPS || '0', 10);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+})();
+function normalizeIp(value) {
+  const s = String(value || '').trim();
+  if (s.startsWith('::ffff:')) return s.slice(7);
+  if (s === '::1') return '127.0.0.1';
+  return s;
+}
+function clientIp(req) {
+  const peer = normalizeIp(req.socket && req.socket.remoteAddress);
+  if (TRUST_PROXY_HOPS === 0) return peer || 'unknown';
+  const chain = String(req.headers['x-forwarded-for'] || '')
+    .split(',').map((x) => normalizeIp(x)).filter(Boolean);
+  if (!chain.length) return peer || 'unknown';
+  // Count back from the RIGHT: only the entries our own proxies appended are
+  // trustworthy, and anything to their left is attacker-controlled.
+  const idx = chain.length - TRUST_PROXY_HOPS;
+  return (idx >= 0 ? chain[idx] : chain[chain.length - 1]) || peer || 'unknown';
+}
+
+// ---- sessions -----------------------------------------------------------
+const SESSIONS = new Map();
+const SESSION_TTL = Number(process.env.SESSION_TTL_MS || 8 * 3600 * 1000);
+function adminToken(req, body) {
+  const h = req.headers['x-admin-token'];
+  if (typeof h === 'string' && h) return h;
+  return (body && body.token) || '';
 }
 function authed(req, body) {
-  const tok = (body && body.token) || req.headers['x-admin-token'] || '';
+  const tok = adminToken(req, body);
   if (!tok) return false;
   const s = SESSIONS.get(tok);
   if (!s) return false;
-  if (Date.now() - s > SESSION_TTL) {
+  if (Date.now() - s.last > SESSION_TTL) {
     SESSIONS.delete(tok);
     return false;
   }
+  s.last = Date.now();
   return true;
+}
+// Sliding-window tokens are swept rather than lingering in the map until the
+// process restarts.
+setInterval(() => {
+  const now = Date.now();
+  for (const [tok, s] of SESSIONS) {
+    if (now - s.last > SESSION_TTL) SESSIONS.delete(tok);
+  }
+}, 5 * 60 * 1000).unref();
+
+function allowedIp(req) {
+  try {
+    const list = getDb().allowedIps || [];
+    if (!list.length) return true;
+    const ip = clientIp(req);
+    return list.some((x) => normalizeIp(x) === ip);
+  } catch {
+    // A failed read used to return true — an unreadable db.json opened the
+    // panel instead of closing it.
+    return false;
+  }
 }
 function needAuth(req, res, body) {
   if (!allowedIp(req)) {
@@ -276,7 +396,24 @@ function needAuth(req, res, body) {
   }
   if (adminDenied(req, res)) return true;
   if (!authed(req, body)) {
-    adminFail(req);
+    // Only a *presented* token counts toward the ban. Counting anonymous hits
+    // would let anyone lock a real admin out by spamming /admin unauthenticated.
+    if (adminToken(req, body)) adminFail(req);
+    sendText(res, 'Denied.', 403);
+    return true;
+  }
+  return false;
+}
+// Same gate judged from headers alone, so a request can be refused before its
+// body is read into memory. Used by /admin/upload.
+function needHeaderAuth(req, res) {
+  if (!allowedIp(req)) {
+    sendText(res, 'Denied.', 403);
+    return true;
+  }
+  if (adminDenied(req, res)) return true;
+  if (!authed(req, null)) {
+    if (adminToken(req, null)) adminFail(req);
     sendText(res, 'Denied.', 403);
     return true;
   }
@@ -317,9 +454,20 @@ function loadDb() {
     return db;
   }
 }
+// One process owns db.json, so it is read once and kept hot. Previously every
+// request — including 404s and static jar downloads — did readFileSync plus
+// JSON.parse on the event loop, and a route that awaited between its read and
+// its write could drop another caller's update.
+let DB_CACHE = null;
+function getDb() {
+  if (!DB_CACHE) DB_CACHE = loadDb();
+  return DB_CACHE;
+}
 function saveDb(db) {
-  // Atomic write: tmp + rename so a crash never leaves a torn db.json.
-  const tmp = DB_FILE + '.tmp';
+  DB_CACHE = db;
+  // Atomic write, with a per-writer temp name: a fixed '.tmp' let two writers
+  // rename over each other.
+  const tmp = DB_FILE + '.' + process.pid + '.' + crypto.randomBytes(6).toString('hex') + '.tmp';
   fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
   fs.renameSync(tmp, DB_FILE);
 }
@@ -342,6 +490,34 @@ function liveUsers(db) {
   const map = db.online || {};
   return Object.keys(map).filter((u) => now - map[u] < ONLINE_TTL_MS).sort();
 }
+// The online map used to only ever gain keys: a name that stopped pinging stayed
+// in db.json forever. Entries older than an hour are dropped on the next write.
+function pruneOnline(db) {
+  const now = Date.now();
+  const map = db.online || {};
+  for (const u of Object.keys(map)) {
+    if (now - Number(map[u] || 0) > ONLINE_TTL_MS * 12) delete map[u];
+  }
+}
+// /api/tyxen/ping is called by every player's mod and cannot require a login,
+// so it is throttled per caller+name. A throttled ping still answers ok — the
+// mod cannot tell the difference — but it costs no disk write.
+const PING_MIN_INTERVAL = Number(process.env.PING_MIN_INTERVAL_MS || 30 * 1000);
+const PING_SEEN = new Map();
+function pingThrottled(ip, username) {
+  const now = Date.now();
+  const key = ip + '|' + username;
+  const last = PING_SEEN.get(key);
+  if (last !== undefined && now - last < PING_MIN_INTERVAL) return true;
+  PING_SEEN.set(key, now);
+  if (PING_SEEN.size > 20000) {
+    for (const [k, t] of PING_SEEN) {
+      if (now - t > PING_MIN_INTERVAL) PING_SEEN.delete(k);
+    }
+    if (PING_SEEN.size > 20000) PING_SEEN.clear();
+  }
+  return false;
+}
 function ensureUser(db, username) {
   const key = username.toLowerCase();
   if (!db.users[key]) {
@@ -355,16 +531,24 @@ const NAME_RE = /^[A-Za-z0-9_]{3,16}$/;
 function validName(n) {
   return typeof n === 'string' && NAME_RE.test(n);
 }
-const MAX_JSON_BODY = 64 * 1024 * 1024;
+// A jar is ~8 MB, so a base64 body needs well under the old 64 MB ceiling.
+const MAX_JSON_BODY = Number(process.env.MAX_UPLOAD_BODY_BYTES || 32 * 1024 * 1024);
 const FAILS = new Map();
-function clientIp(req) {
-  return ((req.headers['x-forwarded-for'] || '').split(',')[0] || '').trim() || (req.socket && req.socket.remoteAddress) || 'x';
+const MAX_FAIL_TRACKS = 5000;
+const FAIL_GRACE = Number(process.env.ADMIN_FAIL_GRACE || 5);
+// FAILS was keyed on the spoofable header and never pruned, so anyone could
+// grow it without bound using fresh X-Forwarded-For values each request.
+function sweepFails() {
+  const now = Date.now();
+  for (const [ip, f] of FAILS) {
+    if (f.until < now) FAILS.delete(ip);
+  }
+  if (FAILS.size > MAX_FAIL_TRACKS) FAILS.clear();
 }
 function adminDenied(req, res) {
   const ip = clientIp(req);
-  const now = Date.now();
   const f = FAILS.get(ip);
-  if (f && f.until > now) {
+  if (f && f.until > Date.now()) {
     sendText(res, 'Slow down.', 429);
     return true;
   }
@@ -374,15 +558,28 @@ function adminFail(req) {
   const ip = clientIp(req);
   const f = FAILS.get(ip) || { count: 0, until: 0 };
   f.count += 1;
-  f.until = Date.now() + Math.min(600000, f.count * 30000);
+  // One typo used to cost a 30 second lockout. Free attempts up to a small
+  // grace, then escalating lockout — brute force is still stopped, and it was
+  // already stopped by the strong password, not by this counter.
+  f.until = f.count >= FAIL_GRACE ? Date.now() + Math.min(600000, f.count * 30000) : 0;
   FAILS.set(ip, f);
+  if (FAILS.size > MAX_FAIL_TRACKS) sweepFails();
+}
+setInterval(sweepFails, 10 * 60 * 1000).unref();
+function applySecurityHeaders(res) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Cache-Control', 'no-store');
 }
 function sendJson(res, obj, code = 200) {
   const body = JSON.stringify(obj);
+  applySecurityHeaders(res);
   res.writeHead(code, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
   res.end(body);
 }
 function sendText(res, text, code = 200, type = 'text/plain') {
+  applySecurityHeaders(res);
   res.writeHead(code, { 'Content-Type': type, 'Content-Length': Buffer.byteLength(text) });
   res.end(text);
 }
@@ -414,7 +611,6 @@ const MIME = { '.png': 'image/png', '.txt': 'text/plain', '.json': 'application/
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://localhost');
   console.log(`[${new Date().toLocaleTimeString()}] ${req.method} ${url.pathname}${url.search}`);
-  const db = loadDb();
 
   // NOTE: the cosmetics store (catalog/coins/equip) was removed — every
   // /api/store/* route now answers 410 Gone so old mod menus fail visibly
@@ -426,18 +622,25 @@ const server = http.createServer(async (req, res) => {
   // ---- tyxen user ping (nametag badge list + online tracking) ----
   if (url.pathname === '/api/tyxen/ping' && req.method === 'POST') {
     const body = await readBody(req);
-    const username = (body.username || '').toLowerCase();
     if (!validName(body.username)) {
       return sendJson(res, { error: 'Invalid username.' }, 400);
     }
-    ensureUser(db, username);
-    db.online = db.online || {};
-    db.online[username] = Date.now();
-    saveDb(db);
-    const list = loadUsers();
-    if (!list.includes(username)) {
-      list.push(username);
-      saveUsers(list);
+    const username = String(body.username).toLowerCase();
+    // Anyone on the internet could POST this forever; previously each call
+    // rewrote two files and added a permanent entry. Throttled pings still get
+    // {ok:true} so no client behaviour changes, but touch no disk.
+    if (!pingThrottled(clientIp(req), username)) {
+      const db = getDb();
+      ensureUser(db, username);
+      db.online = db.online || {};
+      db.online[username] = Date.now();
+      pruneOnline(db);
+      saveDb(db);
+      const list = loadUsers();
+      if (!list.includes(username)) {
+        list.push(username);
+        saveUsers(list);
+      }
     }
     return sendJson(res, { ok: true });
   }
@@ -459,17 +662,27 @@ const server = http.createServer(async (req, res) => {
     if (!allowedIp(req)) {
       return sendText(res, 'Not found.', 404);
     }
+    // The panel uses inline script/styles, so 'unsafe-inline' stays for those;
+    // everything else is locked to this origin and framing is refused outright.
+    res.setHeader('Content-Security-Policy',
+      "default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; "
+      + "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; "
+      + "base-uri 'none'; form-action 'none'; frame-ancestors 'none'");
     return sendText(res, ADMIN_HTML, 200, 'text/html');
   }
   if (url.pathname === '/admin/login' && req.method === 'POST') {
     const body = await readBody(req);
     if (adminDenied(req, res)) return;
+    if (!ADMIN_USER || !ADMIN_KEY) {
+      // Nothing configured: refuse, and never fall back to a built-in secret.
+      return sendText(res, 'Admin login is not configured on this server.', 503);
+    }
     if (!body || body.username !== ADMIN_USER || !checkPassword(body.password)) {
       adminFail(req);
       return sendJson(res, { ok: false });
     }
     const tok = crypto.randomBytes(32).toString('hex');
-    SESSIONS.set(tok, Date.now());
+    SESSIONS.set(tok, { created: Date.now(), last: Date.now() });
     return sendJson(res, { ok: true, token: tok });
   }
   if (url.pathname === '/admin/logout' && req.method === 'POST') {
@@ -477,11 +690,21 @@ const server = http.createServer(async (req, res) => {
     if (body && body.token) SESSIONS.delete(body.token);
     return sendJson(res, { ok: true });
   }
+  // Drop every live token at once. This is the escape hatch for a stolen or
+  // leaked session: before it, a leaked token stayed valid for its whole TTL
+  // even after the password was rotated, because sessions lived only in memory.
+  if (url.pathname === '/admin/revoke' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (needAuth(req, res, body)) return;
+    const n = SESSIONS.size;
+    SESSIONS.clear();
+    return sendJson(res, { ok: true, revoked: n });
+  }
   if (url.pathname === '/admin/stats' && req.method === 'POST') {
     const body = await readBody(req);
     if (adminDenied(req, res)) return;
     if (needAuth(req, res, body)) return;
-    const db5 = loadDb();
+    const db5 = getDb();
     const now = Date.now();
     const onlineMap = db5.online || {};
     const online = Object.values(onlineMap).filter((t) => now - t < ONLINE_TTL_MS).length;
@@ -527,12 +750,15 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, { ok: true, users: loadUsers() });
   }
   if (url.pathname === '/admin/upload' && req.method === 'POST') {
-    if (adminDenied(req, res)) return;
+    // Authenticated from headers BEFORE the body is read. This is the route
+    // that pushes a jar to every installed client, and it used to accept a 64 MB
+    // body from an anonymous caller first and check the token afterwards —
+    // enough to exhaust memory with a handful of concurrent requests.
+    if (needHeaderAuth(req, res)) return;
     const body = await readBody(req, MAX_JSON_BODY);
     if (body === null) {
       return sendText(res, 'Too big.', 413);
     }
-    if (needAuth(req, res, body)) return;
     if (!body.filename || !body.version || !body.data) {
       return sendText(res, 'filename + version + data required.', 400);
     }
@@ -543,9 +769,15 @@ const server = http.createServer(async (req, res) => {
     if (!/^tyxen-\d+\.\d+\.\d+\.jar$/.test(safe)) {
       return sendText(res, 'Filename must be tyxen-X.Y.Z.jar.', 400);
     }
+    const jar = Buffer.from(String(body.data), 'base64');
+    // A .jar is a zip: refuse anything that does not start with PK, so garbage
+    // or an arbitrary blob cannot be published as the client update.
+    if (jar.length < 4 || jar[0] !== 0x50 || jar[1] !== 0x4b) {
+      return sendText(res, 'Data is not a valid .jar (zip) file.', 400);
+    }
     const modDir = path.join(FILES, 'mods');
     if (!fs.existsSync(modDir)) fs.mkdirSync(modDir, { recursive: true });
-    fs.writeFileSync(path.join(modDir, safe), Buffer.from(body.data, 'base64'));
+    fs.writeFileSync(path.join(modDir, safe), jar);
     fs.writeFileSync(path.join(DATA, 'manifest.json'), JSON.stringify({
       version: body.version,
       url: '/files/mods/' + safe,
@@ -557,21 +789,21 @@ const server = http.createServer(async (req, res) => {
   if (url.pathname === '/admin/ips' && req.method === 'POST') {
     const body = await readBody(req);
     if (needAuth(req, res, body)) return;
-    const db6 = loadDb();
+    const db6 = getDb();
     return sendJson(res, { ips: db6.allowedIps || [], mine: clientIp(req) });
   }
   if (url.pathname === '/admin/ips/set' && req.method === 'POST') {
     const body = await readBody(req);
     if (needAuth(req, res, body)) return;
     const list = Array.isArray(body.ips) ? body.ips.filter((x) => typeof x === 'string' && x.length < 64).slice(0, 50) : [];
-    const db7 = loadDb();
+    const db7 = getDb();
     db7.allowedIps = list;
     saveDb(db7);
     return sendJson(res, { ok: true, ips: list });
   }
   // ---- announcements (launcher left section) ----
   if (url.pathname === '/api/tyxen/announcements' && req.method === 'GET') {
-    const db2 = loadDb();
+    const db2 = getDb();
     return sendJson(res, { announcements: db2.announcements || [] });
   }
   if (url.pathname === '/admin/announce' && req.method === 'POST') {
@@ -581,7 +813,7 @@ const server = http.createServer(async (req, res) => {
     if (!body.title) {
       return sendText(res, 'Title required.', 400);
     }
-    const db3 = loadDb();
+    const db3 = getDb();
     db3.announcements = db3.announcements || [];
     db3.announcements.unshift({ id: Date.now(), title: body.title, body: body.body || '', date: new Date().toISOString().slice(0, 10) });
     db3.announcements = db3.announcements.slice(0, 20);
@@ -592,7 +824,7 @@ const server = http.createServer(async (req, res) => {
     const body = await readBody(req);
     if (adminDenied(req, res)) return;
     if (needAuth(req, res, body)) return;
-    const db4 = loadDb();
+    const db4 = getDb();
     const delId = Number(body.id);
     db4.announcements = (db4.announcements || []).filter((a) => a.id !== delId);
     saveDb(db4);
@@ -601,6 +833,7 @@ const server = http.createServer(async (req, res) => {
 
   // ---- online counter: kitne online / kitne total ----
   if (url.pathname === '/api/tyxen/online' && req.method === 'GET') {
+    const db = getDb();
     const now = Date.now();
     const onlineMap = db.online || {};
     const online = Object.values(onlineMap).filter((t) => now - t < ONLINE_TTL_MS).length;
@@ -620,10 +853,10 @@ const server = http.createServer(async (req, res) => {
   // Someone on another launcher never pings → never badged. Someone who
   // quits lingers at most ONLINE_TTL_MS, then drops off by itself.
   if (url.pathname === '/tyxen/active-users.txt' && req.method === 'GET') {
-    return sendText(res, liveUsers(db).join('\n') + '\n');
+    return sendText(res, liveUsers(getDb()).join('\n') + '\n');
   }
   if (url.pathname === '/tyxen/players.md5' && req.method === 'GET') {
-    const hash = crypto.createHash('md5').update(JSON.stringify(liveUsers(db))).digest('hex');
+    const hash = crypto.createHash('md5').update(JSON.stringify(liveUsers(getDb()))).digest('hex');
     return sendText(res, hash + '\n');
   }
 
@@ -652,7 +885,34 @@ const server = http.createServer(async (req, res) => {
   res.end('tyxen backend: unknown route');
 });
 
+// ---- key generator: node server.cjs --make-key --------------------------
+// Reads the secret from ADMIN_NEW_PASSWORD so it never lands in argv or shell
+// history, and prints the ADMIN_KEY line to paste into the environment.
+if (process.argv.includes('--make-key')) {
+  const pw = process.env.ADMIN_NEW_PASSWORD || '';
+  if (pw.length < 12) {
+    console.error('Set ADMIN_NEW_PASSWORD first — 12+ characters, not reused anywhere.');
+    process.exit(1);
+  }
+  console.log('Copy these into your environment (see .env.example), then restart:');
+  console.log('ADMIN_USER=' + (process.env.ADMIN_USER || '<pick a login name>'));
+  console.log('ADMIN_KEY=' + makeAdminKey(pw));
+  process.exit(0);
+}
+
 server.listen(PORT, () => {
   console.log(`TYXEN backend chal raha hai: http://localhost:${PORT}`);
   console.log('Badges, updates, announcements — sab yahin se.');
+  if (!ADMIN_USER || !ADMIN_KEY) {
+    console.warn('[warn] ADMIN_USER / ADMIN_KEY are not set — /admin login stays disabled until they are.');
+  }
+  if (TRUST_PROXY_HOPS === 0) {
+    console.warn('[warn] TRUST_PROXY_HOPS=0: callers are identified by TCP address. Set it to your real '
+      + 'proxy hop count if nginx/Caddy/Cloudflare fronts this server, or the allowlist will key on the proxy.');
+  }
+  try {
+    if (!(getDb().allowedIps || []).length) {
+      console.warn('[warn] Admin IP allowlist is empty — /admin is reachable from anywhere (login still required).');
+    }
+  } catch {}
 });

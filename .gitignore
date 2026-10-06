@@ -16,6 +16,10 @@ src-tauri/target/
 *.local
 vite.config.ts.timestamp-*
 
+# tyxen-server runtime state — db.json, users.json, manifest.json and the
+# atomic-write temp files. Never commit these; they hold live server data.
+tyxen-server/data/
+
 # OS / editor
 .DS_Store
 Thumbs.db
